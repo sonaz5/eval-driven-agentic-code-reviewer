@@ -18,7 +18,10 @@ doesn't route production traffic through them.
 """
 
 import ast
+import asyncio
 import os
+import sys
+from pathlib import Path
 from typing import Annotated, Optional
 from typing_extensions import TypedDict
 
@@ -30,7 +33,15 @@ from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from src.phase3_hybrid_rag import EMBEDDING_MODEL, HybridIndex, Reranker, hybrid_search
+# The phase*.py scripts (including phase3_hybrid_rag.py) live under src/,
+# while this file lives at the project root -- add src/ to the import path
+# so the import below finds it no matter what directory this script is
+# launched from (local shell, Docker WORKDIR, or Streamlit Cloud).
+_SRC_DIR = Path(__file__).resolve().parent / "src"
+if _SRC_DIR.is_dir() and str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+from phase3_hybrid_rag import EMBEDDING_MODEL, HybridIndex, Reranker, hybrid_search
 
 # Path to the persistent SQLite database
 DB_PATH = "agent_memory.db"
@@ -38,7 +49,20 @@ DB_PATH = "agent_memory.db"
 # Single source of truth for the model name used by the live app (the
 # other phase*.py scripts each hardcode their own -- see the "kod tekrarı"
 # cleanup item for consolidating those too).
-MODEL_NAME = "gemini-3.1-flash-lite"
+# Override without touching code: set GEMINI_MODEL in your environment (or
+# Streamlit secrets) if Google retires or overloads the default model.
+MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
+
+# Transient Google-side failures (503 "model is overloaded", 429 quota
+# bursts) are retried with growing pauses before giving up. Delays are
+# seconds between attempts, so 4 attempts total.
+RETRY_DELAYS = (2, 5, 10)
+_TRANSIENT_MARKERS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "500", "INTERNAL", "DEADLINE_EXCEEDED")
+
+
+def _is_transient(error: Exception) -> bool:
+    text = str(error)
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
 
 SYSTEM_PROMPT = (
     "You are a strict Senior Software Engineer. You have a `search_codebase` "
@@ -194,8 +218,15 @@ async def run_agent_query(
 
     async def call_model(state: AgentState):
         messages_to_send = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-        response = await llm_with_tools.ainvoke(messages_to_send)
-        return {"messages": [response]}
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            try:
+                response = await llm_with_tools.ainvoke(messages_to_send)
+                return {"messages": [response]}
+            except Exception as error:
+                last_attempt = attempt == len(RETRY_DELAYS)
+                if last_attempt or not _is_transient(error):
+                    raise
+                await asyncio.sleep(RETRY_DELAYS[attempt])
 
     workflow = StateGraph(AgentState)
     workflow.add_node("agent", call_model)
@@ -257,5 +288,4 @@ async def run_cli():
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(run_cli())

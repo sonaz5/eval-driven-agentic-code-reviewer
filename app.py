@@ -265,6 +265,28 @@ def extract_python_code(markdown_text: str) -> str:
     return ""
 
 
+def show_friendly_error(error: Exception) -> None:
+    """Turns raw Gemini API errors into a readable message instead of
+    dumping the JSON blob on the user."""
+    text = str(error)
+    if "503" in text or "UNAVAILABLE" in text:
+        st.warning(
+            "Google's Gemini model is temporarily overloaded (503). The app already "
+            "retried automatically a few times. Please wait a minute and press the "
+            "button again."
+        )
+    elif "429" in text or "RESOURCE_EXHAUSTED" in text:
+        st.warning(
+            "Gemini API quota reached (429). Please wait about 60 seconds and try again."
+        )
+    elif "GEMINI_API_KEY" in text:
+        st.error("GEMINI_API_KEY is not set. Add it to your environment or Streamlit Secrets.")
+    else:
+        st.error(f"Execution Error: {text}")
+    with st.expander("Technical details"):
+        st.code(text)
+
+
 def build_context_files(primary_code: str, primary_label: str = "review_snippet.py") -> dict:
     """Assembles the {filename: source} dict passed to run_agent_query's
     search_codebase tool: the code currently in the box, plus whatever
@@ -377,7 +399,7 @@ with tab_review:
                         st.markdown(evaluation_response)
                         render_tool_call_log(tool_calls_used)
                     except Exception as error:
-                        st.error(f"Execution Error: {str(error)}")
+                        show_friendly_error(error)
                     finally:
                         event_loop.close()
         elif "last_review" in st.session_state:
@@ -463,7 +485,7 @@ with tab_tests:
                         st.markdown(test_response)
                         render_tool_call_log(test_tool_calls)
                     except Exception as error:
-                        st.error(f"Execution Error: {str(error)}")
+                        show_friendly_error(error)
                     finally:
                         event_loop.close()
         else:

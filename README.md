@@ -18,13 +18,27 @@ Features a full-stack interactive UI powered by Streamlit and persistent thread-
 
 ---
 
-## Key Capabilities
+## 🚀 Core Features & Studio Interface
 
-1. **Autonomous Code Analysis & Diff View**: Syntax verification, vulnerability detection, and unified Git-style diff suggestions.
-2. **PyTest Suite Generator**: Automated unit test creation with edge case coverage.
-3. **Stateful Multi-Session Memory**: Isolated conversations and checkpoints backed by local SQLite (`agent_memory.db`).
-4. **Corporate-Ready UI**: Custom enterprise minimalist Streamlit interface without default headers, footers, or menu bars.
+The autonomous studio is built on Streamlit and divided into four functional tabs, ensuring a clear separation of concerns during the code review lifecycle:
 
+1. **Code Review & Diff View:** 
+   - Accepts raw Python snippets or pre-configured benchmark cases (e.g., SQL Injection, Resource Leaks).
+   - Dynamically searches attached context files (uploaded via the sidebar) using a Hybrid RAG pipeline (BM25 + Sentence Transformers) to understand external function dependencies before judging the code.
+   - Outputs a side-by-side Git-style Diff View comparing the original snippet with the agent's production-ready refactored code.
+
+2. **PyTest Suite Generator:** 
+   - Automatically infers edge cases, boundary conditions, and happy paths.
+   - Generates fully mocked, parameterized unit tests using `pytest` or `unittest` frameworks based on the reviewed code.
+
+3. **Engineering Architecture:** 
+   - A transparent technical roadmap detailing the 6 phases of the project's construction, from Lexical BM25 Search (Phase 1) to LangGraph State Machines (Phase 6).
+
+4. **Capabilities & Guide:** 
+   - Details the strict audit gates applied by the agent, including OWASP Top 10 security vulnerability checks, PEP 8 compliance, explicit type-hinting enforcement, and performance optimization rules.
+
+** Stateful Session Memory:** 
+Instead of a dedicated UI tab, memory is managed seamlessly in the background. Each evaluation runs under a specific "Thread ID" backed by an asynchronous SQLite checkpointer (`agent_memory.db`), allowing the agent to remember context across continuous interactions without risking UI clutter.
 ---
 
 ## Local Setup & Installation
