@@ -1,3 +1,5 @@
+import ast
+import operator
 import os
 from typing import Annotated
 from typing_extensions import TypedDict
@@ -16,16 +18,51 @@ class State(TypedDict):
 def calculator(expression: str) -> str:
     """Evaluate a simple arithmetic expression safely. Example: '23 * 47' or '23 x 47'."""
     
-
+    # Replace 'x' with '*' so the AST parser understands it as multiplication
     expression = expression.lower().replace("x", "*")
     
-    allowed_chars = set("0123456789+-*/(). ")
-    
-    if not set(expression) <= allowed_chars:
-        return "Error: Expression contains disallowed characters. Please use only numbers and basic operators (+, -, *, /, x)."
-    
+    # Whitelist of safe mathematical operations
+    allowed_operators = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.Pow: operator.pow,
+        ast.USub: operator.neg  # For negative numbers
+    }
+
+    def evaluate_node(node):
+        """Recursively reads the syntax tree and performs math securely."""
+        if isinstance(node, ast.Constant):
+            return node.value
+            
+        elif isinstance(node, ast.BinOp):
+            left = evaluate_node(node.left)
+            right = evaluate_node(node.right)
+            op_type = type(node.op)
+            
+            if op_type in allowed_operators:
+                return allowed_operators[op_type](left, right)
+            else:
+                raise ValueError(f"Unsupported operator: {op_type.__name__}")
+                
+        elif isinstance(node, ast.UnaryOp):
+            operand = evaluate_node(node.operand)
+            op_type = type(node.op)
+            
+            if op_type in allowed_operators:
+                return allowed_operators[op_type](operand)
+            else:
+                raise ValueError(f"Unsupported operator: {op_type.__name__}")
+                
+        else:
+            raise ValueError("Unsafe or unsupported syntax used.")
+
     try:
-        return str(eval(expression, {"__builtins__": {}}, {}))
+        # Parse the text into a safe tree structure instead of executing it
+        tree = ast.parse(expression, mode='eval')
+        result = evaluate_node(tree.body)
+        return str(result)
     except Exception as exc:
         return f"Error occurred during calculation: {exc}. Please correct the expression and try again."
 
@@ -46,7 +83,6 @@ def get_weather(city: str) -> str:
 
 tools = [calculator, get_weather]
 tool_node = ToolNode(tools)
-
 
 model = ChatGoogleGenerativeAI(
     model="gemini-3.6-flash" 
@@ -78,14 +114,12 @@ if __name__ == "__main__":
         print("Please set the GEMINI_API_KEY environment variable.")
         exit(1)
 
-   
     user_prompt = "What is 23 x 47, and what's the weather in Istanbul?"
     print(f"User: {user_prompt}\n")
     print("-" * 40)
     
     inputs = {"messages": [("user", user_prompt)]}
     
-
     config = {"configurable": {"thread_id": "ornek_sohbet_1"}, "recursion_limit": 50}
     
     for event in app.stream(inputs, config=config):
